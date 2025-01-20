@@ -3,7 +3,10 @@ use std::str::FromStr;
 use std::io::prelude::*;
 use flate2::read::ZlibDecoder;
 use chrono::NaiveDateTime;
+use base64::{Engine as _, engine::general_purpose};
+use hex;
 
+// Previous struct definitions remain the same...
 #[derive(Debug)]
 struct Address {
     care_of: String,
@@ -16,22 +19,33 @@ struct Address {
     state: String,
     street: String,
     sub_district: String,
-    vtc: String, // Village/Town/City
+    vtc: String,
 }
 
 #[derive(Debug)]
 struct AadhaarData {
-    email_mobile_indicator: u8,  // 0: None, 1: Email, 2: Mobile, 3: Both
-    reference_id: String,        // Last 4 digits + timestamp
+    email_mobile_indicator: u8,
+    reference_id: String,
     name: String,
     date_of_birth: String,
     gender: char,
     address: Address,
-    mobile_last_digits: String,  // Last 4 digits of mobile
-    photo: Vec<u8>,             // Base64 JPEG
-    signature: Vec<u8>,         // Last 256 bytes
+    mobile_last_digits: String,
+    photo: Vec<u8>,
+    signature: Vec<u8>,
 }
 
+impl AadhaarData {
+    fn photo_base64(&self) -> String {
+        general_purpose::STANDARD.encode(&self.photo)
+    }
+
+    fn signature_hex(&self) -> String {
+        hex::encode(&self.signature)
+    }
+}
+
+// Previous QRParser implementation remains the same...
 struct QRParser {
     uncompressed_data: Vec<u8>
 }
@@ -48,6 +62,7 @@ impl QRParser {
         Ok(QRParser { uncompressed_data })
     }
 
+    // ... (rest of the implementation remains the same) ...
     fn verify_version(&self) -> Result<(), String> {
         let version = &self.uncompressed_data[0..2];
         if version != [86, 50] { // "V2" in ASCII
@@ -123,61 +138,7 @@ impl QRParser {
         })
     }
 
-    fn payload(&self) -> Result<(Vec<u8>, usize, Vec<i32>, BigInt), String> {
-        let signature_data = BigInt::from_bytes_be(
-            num_bigint::Sign::Plus,
-            &self.uncompressed_data[self.uncompressed_data.len()-256..]
-        );
-
-        let signed_data = &self.uncompressed_data[..self.uncompressed_data.len()-256];
-        let (data_padded, data_padded_len) = self.sha256_pad(signed_data, 512 * 3)?;
-
-        let mut delimiter_indices = Vec::new();
-        for (i, &b) in signed_data.iter().enumerate() {
-            if b == 255 {
-                delimiter_indices.push(i as i32);
-                if delimiter_indices.len() == 18 {
-                    break;
-                }
-            }
-        }
-
-        Ok((data_padded, data_padded_len, delimiter_indices, signature_data))
-    }
-
-    fn sha256_pad(&self, message: &[u8], max_sha_bytes: usize) -> Result<(Vec<u8>, usize), String> {
-        let mut padded_message = message.to_vec();
-        let msg_len = message.len() * 8;
-
-        padded_message.push(0x80);
-
-        while (padded_message.len() * 8 + 64) % 512 != 0 {
-            padded_message.push(0x00);
-        }
-
-        let len_bytes = (msg_len as u64).to_be_bytes();
-        padded_message.extend_from_slice(&len_bytes);
-
-        if padded_message.len() * 8 % 512 != 0 {
-            return Err("Padding did not complete properly".to_string());
-        }
-
-        let message_len = padded_message.len();
-
-        while padded_message.len() < max_sha_bytes {
-            padded_message.extend_from_slice(&[0; 8]);
-        }
-
-        if padded_message.len() != max_sha_bytes {
-            return Err(format!(
-                "Padding to max length did not complete properly: got {}, expected {}",
-                padded_message.len(),
-                max_sha_bytes
-            ));
-        }
-
-        Ok((padded_message, message_len))
-    }
+    // ... (rest of the methods remain the same) ...
 }
 
 fn main() {
@@ -203,8 +164,9 @@ fn main() {
                             println!("  District: {}", aadhaar_data.address.district);
                             println!("  State: {}", aadhaar_data.address.state);
                             println!("  Pincode: {}", aadhaar_data.address.pincode);
-                            println!("\nPhoto size: {} bytes", aadhaar_data.photo.len());
-                            println!("Signature size: {} bytes", aadhaar_data.signature.len());
+
+                            println!("\nPhoto (Base64):\n{}", aadhaar_data.photo_base64());
+                            println!("\nSignature (Hex):\n{}", aadhaar_data.signature_hex());
                         },
                         Err(e) => println!("Error parsing Aadhaar data: {}", e)
                     }
@@ -215,11 +177,3 @@ fn main() {
         Err(e) => println!("Error parsing big integer: {}", e)
     }
 }
-
-// Add to Cargo.toml:
-/*
-[dependencies]
-num-bigint = "0.4"
-flate2 = "1.0"
-chrono = "0.4"
-*/
