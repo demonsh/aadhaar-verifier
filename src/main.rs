@@ -62,7 +62,6 @@ impl QRParser {
         Ok(QRParser { uncompressed_data })
     }
 
-    // ... (rest of the implementation remains the same) ...
     fn verify_version(&self) -> Result<(), String> {
         let version = &self.uncompressed_data[0..2];
         if version != [86, 50] { // "V2" in ASCII
@@ -137,8 +136,6 @@ impl QRParser {
             signature,
         })
     }
-
-    // ... (rest of the methods remain the same) ...
 }
 
 fn main() {
